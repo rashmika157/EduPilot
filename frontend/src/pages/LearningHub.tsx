@@ -6,6 +6,7 @@ import {
   Play, 
   Loader2, 
   AlertCircle, 
+  ChevronLeft,
   ChevronRight, 
   ChevronDown, 
   Clock, 
@@ -70,10 +71,56 @@ interface YouTubeVideo {
   duration: string;
 }
 
+const normalizeTitle = (title: string): string => title.trim().toLowerCase();
+
+const dedupeSubtopics = (subtopics?: Subtopic[]): Subtopic[] => {
+  if (!subtopics || subtopics.length === 0) return [];
+  const seenIds = new Set<number>();
+  const seenTitles = new Set<string>();
+  return subtopics.reduce<Subtopic[]>((acc, sub) => {
+    const normalizedTitle = normalizeTitle(sub.title);
+    if (seenIds.has(sub.id) || seenTitles.has(normalizedTitle)) return acc;
+    seenIds.add(sub.id);
+    seenTitles.add(normalizedTitle);
+    acc.push({
+      ...sub,
+      children: dedupeSubtopics(sub.children)
+    });
+    return acc;
+  }, []);
+};
+
+const dedupeTopics = (topics?: Topic[]): Topic[] => {
+  if (!topics || topics.length === 0) return [];
+  const seenIds = new Set<number>();
+  const seenTitles = new Set<string>();
+  return topics.reduce<Topic[]>((acc, topic) => {
+    const normalizedTitle = normalizeTitle(topic.title);
+    if (seenIds.has(topic.id) || seenTitles.has(normalizedTitle)) return acc;
+    seenIds.add(topic.id);
+    seenTitles.add(normalizedTitle);
+    acc.push({
+      ...topic,
+      subtopics: dedupeSubtopics(topic.subtopics)
+    });
+    return acc;
+  }, []);
+};
+
+const dedupeNoteTopics = (note: Note): Note => ({
+  ...note,
+  topics: dedupeTopics(note.topics)
+});
+
 export const LearningHub: React.FC = () => {
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   
+  // Panel collapse state
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [centerCollapsed, setCenterCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+
   // Selection states
   const [activeTopicId, setActiveTopicId] = useState<number | null>(null);
   const [activeSubtopicId, setActiveSubtopicId] = useState<number | null>(null);
@@ -82,6 +129,75 @@ export const LearningHub: React.FC = () => {
   // Video and progress states
   const [videos, setVideos] = useState<YouTubeVideo[]>([]);
   const [currentVideo, setCurrentVideo] = useState<YouTubeVideo | null>(null);
+  const [failedVideoIds, setFailedVideoIds] = useState<string[]>([]);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  const isValidVideoId = (id: string): boolean => {
+    if (!id) return false;
+    return /^[a-zA-Z0-9_-]{11}$/.test(id);
+  };
+
+  const pickNextAvailableVideo = (excludeIds: string[] = []): YouTubeVideo | null => {
+    const nextVideo = videos.find(v => isValidVideoId(v.id) && !excludeIds.includes(v.id));
+    return nextVideo || null;
+  };
+
+  const buildVideoSearchQuery = (topicTitle: string, subtopicTitle?: string) => {
+    const parts: string[] = [];
+    if (selectedNote?.subject) {
+      parts.push(selectedNote.subject);
+    }
+    if (selectedNote?.title && selectedNote.title !== selectedNote?.subject) {
+      parts.push(selectedNote.title);
+    }
+    parts.push(topicTitle);
+    if (subtopicTitle) {
+      parts.push(subtopicTitle);
+    }
+    parts.push('lecture');
+    parts.push('tutorial');
+    return parts.filter(Boolean).join(' ').trim();
+  };
+
+  const handleVideoError = (videoId: string) => {
+    console.log(`[YouTube Player] Video ${videoId} failed to play or embed. Trying next video...`);
+    setFailedVideoIds(prev => {
+      const nextFailed = [...prev, videoId];
+      const nextVid = videos.find(v => !nextFailed.includes(v.id) && isValidVideoId(v.id));
+      if (nextVid) {
+        setCurrentVideo(nextVid);
+      } else {
+        setCurrentVideo(null);
+      }
+      return nextFailed;
+    });
+  };
+
+  // Reset failed list when search topic/subtopic changes
+  useEffect(() => {
+    setFailedVideoIds([]);
+  }, [activeTopicId, activeSubtopicId]);
+
+  // Monitor iframe error states using a simpler embed fallback
+  useEffect(() => {
+    if (!currentVideo) return;
+
+    if (!isValidVideoId(currentVideo.id)) {
+      console.warn(`[YT Player] Invalid video ID: '${currentVideo.id}'. Skipping...`);
+      handleVideoError(currentVideo.id);
+      return;
+    }
+
+    if (containerRef.current) {
+      containerRef.current.innerHTML = `<iframe src="https://www.youtube.com/embed/${currentVideo.id}?autoplay=1&rel=0&modestbranding=1" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="width:100%; height:100%;"></iframe>`;
+    }
+
+    return () => {
+      if (containerRef.current) {
+        containerRef.current.innerHTML = '';
+      }
+    };
+  }, [currentVideo]);
   const [progressPercentage, setProgressPercentage] = useState<number>(0);
   const [progressMap, setProgressMap] = useState<Record<string, string>>({});
   const [lastWatchedMap, setLastWatchedMap] = useState<Record<string, string>>({});
@@ -93,6 +209,7 @@ export const LearningHub: React.FC = () => {
   
   // Expand states for tree
   const [expandedTopics, setExpandedTopics] = useState<Record<number, boolean>>({});
+  const [activeNotesExpanded, setActiveNotesExpanded] = useState(true);
 
   // Quiz states
   const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
@@ -132,35 +249,6 @@ export const LearningHub: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    fetchNotes();
-  }, []);
-
-  useEffect(() => {
-    if (selectedNote) {
-      fetchProgress(selectedNote.id);
-      
-      // Auto-expand all topics of selected note by default
-      if (selectedNote.topics) {
-        const expandMap: Record<number, boolean> = {};
-        selectedNote.topics.forEach(t => {
-          expandMap[t.id] = true;
-        });
-        setExpandedTopics(expandMap);
-      }
-      
-      // Auto-select first topic or subtopic if available
-      if (selectedNote.topics && selectedNote.topics.length > 0) {
-        const firstTopic = selectedNote.topics[0];
-        if (firstTopic.subtopics && firstTopic.subtopics.length > 0) {
-          handleSelectSubtopic(firstTopic.subtopics[0]);
-        } else {
-          handleSelectTopic(firstTopic);
-        }
-      }
-    }
-  }, [selectedNote]);
-
   const fetchNotes = async () => {
     setLoadingNotes(true);
     try {
@@ -172,19 +260,18 @@ export const LearningHub: React.FC = () => {
       });
       if (response.ok) {
         const data = await response.json();
-        // Filter out notes without completed extraction
-        const completedNotes = data.filter((n: Note) => n.topic_extraction_status === 'completed');
+        const completedNotes = data
+          .filter((n: Note) => n.topic_extraction_status === 'completed')
+          .map(dedupeNoteTopics);
         setNotes(completedNotes);
         if (completedNotes.length > 0) {
           setSelectedNote(completedNotes[0]);
         }
-      } else {
-        if (response.status === 401) {
-          window.dispatchEvent(new Event('unauthorized'));
-        }
+      } else if (response.status === 401) {
+        window.dispatchEvent(new Event('unauthorized'));
       }
     } catch (err) {
-      console.error("Failed to fetch notes library:", err);
+      console.error('Failed to fetch notes library:', err);
     } finally {
       setLoadingNotes(false);
     }
@@ -209,12 +296,56 @@ export const LearningHub: React.FC = () => {
     }
   };
 
-  const fetchVideos = async (searchQuery: string, fallbackVideoId?: string) => {
+  useEffect(() => {
+    fetchNotes();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedNote) return;
+
+    fetchProgress(selectedNote.id);
+
+    // Auto-expand all topics of selected note by default
+    if (selectedNote.topics) {
+      const expandMap: Record<number, boolean> = {};
+      selectedNote.topics.forEach(t => {
+        expandMap[t.id] = true;
+      });
+      setExpandedTopics(expandMap);
+    }
+
+    // Auto-select first topic or subtopic if available
+    if (selectedNote.topics && selectedNote.topics.length > 0) {
+      const firstTopic = selectedNote.topics[0];
+      if (firstTopic.subtopics && firstTopic.subtopics.length > 0) {
+        handleSelectSubtopic(firstTopic.subtopics[0]);
+      } else {
+        handleSelectTopic(firstTopic);
+      }
+    } else {
+      setActiveTopicId(null);
+      setActiveSubtopicId(null);
+      setActiveTitle(selectedNote.title);
+    }
+  }, [selectedNote]);
+
+  const fetchVideos = async (
+    searchQuery: string,
+    noteId?: number,
+    topicId?: number | null,
+    subtopicId?: number | null,
+    fallbackVideoId?: string
+  ) => {
     setLoadingVideos(true);
     setErrorMsg(null);
     try {
       const token = localStorage.getItem('edupilot_token');
-      const response = await fetch(`http://127.0.0.1:8000/api/learning-hub/videos?query=${encodeURIComponent(searchQuery)}`, {
+      const queryParams = new URLSearchParams();
+      queryParams.set('query', searchQuery);
+      if (noteId !== undefined && noteId !== null) queryParams.set('note_id', noteId.toString());
+      if (topicId !== undefined && topicId !== null) queryParams.set('topic_id', topicId.toString());
+      if (subtopicId !== undefined && subtopicId !== null) queryParams.set('subtopic_id', subtopicId.toString());
+      const response = await fetch(`http://127.0.0.1:8000/api/learning-hub/videos?${queryParams.toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -222,19 +353,23 @@ export const LearningHub: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         setVideos(data);
-        if (data.length > 0) {
-          // If fallbackVideoId is set and present in the list, load it
-          const matchingVideo = fallbackVideoId ? data.find((v: YouTubeVideo) => v.id === fallbackVideoId) : null;
-          setCurrentVideo(matchingVideo || data[0]);
+        const validVideos = data.filter((v: YouTubeVideo) => isValidVideoId(v.id) && !failedVideoIds.includes(v.id));
+        if (validVideos.length > 0) {
+          const matchingVideo = fallbackVideoId ? validVideos.find((v: YouTubeVideo) => v.id === fallbackVideoId) : null;
+          setCurrentVideo(matchingVideo || validVideos[0]);
+        } else if (data.length > 0) {
+          setCurrentVideo(null);
+          setErrorMsg('No playable videos returned for this topic.');
         } else {
           setCurrentVideo(null);
+          setErrorMsg('No recommended videos were found for this topic.');
         }
       } else {
-        setErrorMsg("Failed to retrieve recommended videos.");
+        setErrorMsg('Failed to retrieve recommended videos.');
       }
     } catch (err) {
-      console.error("Failed to search videos:", err);
-      setErrorMsg("Unable to communicate with YouTube service.");
+      console.error('Failed to search videos:', err);
+      setErrorMsg('Unable to communicate with YouTube service.');
     } finally {
       setLoadingVideos(false);
     }
@@ -247,6 +382,15 @@ export const LearningHub: React.FC = () => {
     }));
   };
 
+  useEffect(() => {
+    if (!currentVideo && videos.length > 0) {
+      const nextVideo = pickNextAvailableVideo(failedVideoIds);
+      if (nextVideo) {
+        setCurrentVideo(nextVideo);
+      }
+    }
+  }, [videos, failedVideoIds, currentVideo]);
+
   const handleSelectTopic = (topic: Topic) => {
     setActiveTopicId(topic.id);
     setActiveSubtopicId(null);
@@ -255,14 +399,12 @@ export const LearningHub: React.FC = () => {
     const key = `topic_${topic.id}`;
     const previousWatchedVideo = lastWatchedMap[key];
     
-    // Construct search query
-    const query = `${selectedNote?.subject || ''} ${topic.title}`;
-    fetchVideos(query, previousWatchedVideo);
+    // Construct search query: Subject + Chapter/Topic
+    const query = buildVideoSearchQuery(topic.title);
+    fetchVideos(query, selectedNote?.id, topic.id, null, previousWatchedVideo);
   };
 
   const handleSelectSubtopic = (subtopic: Subtopic) => {
-    // Find parent topic title
-    const parentTopic = selectedNote?.topics?.find(t => t.id === subtopic.topic_id);
     setActiveTopicId(subtopic.topic_id);
     setActiveSubtopicId(subtopic.id);
     setActiveTitle(subtopic.title);
@@ -270,8 +412,10 @@ export const LearningHub: React.FC = () => {
     const key = `subtopic_${subtopic.id}`;
     const previousWatchedVideo = lastWatchedMap[key];
     
-    const query = `${parentTopic?.title || ''} ${subtopic.title}`;
-    fetchVideos(query, previousWatchedVideo);
+    // Construct search query: Subject + Chapter (parent topic) + Selected Topic (subtopic)
+    const parentTopic = selectedNote?.topics?.find(t => t.id === subtopic.topic_id);
+    const query = buildVideoSearchQuery(parentTopic?.title || '', subtopic.title);
+    fetchVideos(query, selectedNote?.id, parentTopic?.id || null, subtopic.id, previousWatchedVideo);
   };
 
   const handleSelectVideo = async (video: YouTubeVideo) => {
@@ -418,7 +562,8 @@ export const LearningHub: React.FC = () => {
     }}>
       {/* 1. LEFT PANEL: Lecture Topics Tree & Progress */}
       <div style={{
-        width: '320px',
+        width: leftCollapsed ? '64px' : '320px',
+        minWidth: leftCollapsed ? '64px' : '240px',
         backgroundColor: 'rgba(255,255,255,0.01)',
         border: '1px solid var(--border-color)',
         borderRadius: 'var(--radius-md)',
@@ -426,6 +571,62 @@ export const LearningHub: React.FC = () => {
         flexDirection: 'column',
         overflow: 'hidden'
       }}>
+        <div style={{
+          padding: '12px',
+          borderBottom: '1px solid var(--border-color)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: leftCollapsed ? 'center' : 'space-between',
+          gap: '8px',
+          cursor: 'pointer'
+        }}>
+          {!leftCollapsed ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <BookMarked size={16} color="var(--primary)" />
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Active Note Package</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLeftCollapsed(true)}
+                style={{
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  padding: '6px',
+                  borderRadius: '999px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                aria-label="Collapse topics panel"
+              >
+                <ChevronLeft size={18} />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setLeftCollapsed(false)}
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '100%',
+                padding: '6px',
+                borderRadius: '999px'
+              }}
+              aria-label="Expand topics panel"
+            >
+              <ChevronRight size={18} />
+            </button>
+          )}
+        </div>
         {/* Note Selector Dropdown */}
         <div style={{
           padding: '16px',
@@ -434,43 +635,61 @@ export const LearningHub: React.FC = () => {
           flexDirection: 'column',
           gap: '12px'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <BookMarked size={16} color="var(--primary)" />
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Active Note Package</span>
+          <div 
+            onClick={() => setActiveNotesExpanded(!activeNotesExpanded)}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              userSelect: 'none'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <BookMarked size={16} color="var(--primary)" />
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Active Note Package</span>
+            </div>
+            <span style={{ display: 'flex', alignItems: 'center', color: 'var(--text-muted)' }}>
+              {activeNotesExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </span>
           </div>
           
-          {loadingNotes ? (
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <Loader2 className="spin-icon" size={16} />
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Loading library...</span>
-            </div>
-          ) : notes.length === 0 ? (
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No completed extraction notes found.</span>
-          ) : (
-            <select
-              value={selectedNote?.id || ''}
-              onChange={(e) => {
-                const note = notes.find(n => n.id === intval(e.target.value));
-                if (note) setSelectedNote(note);
-              }}
-              style={{
-                width: '100%',
-                backgroundColor: 'rgba(255,255,255,0.02)',
-                border: '1px solid var(--border-color)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '10px 14px',
-                color: 'var(--text-primary)',
-                fontSize: '0.85rem',
-                outline: 'none',
-                cursor: 'pointer'
-              }}
-            >
-              {notes.map(n => (
-                <option key={n.id} value={n.id} style={{ backgroundColor: '#130f2e', color: 'white' }}>
-                  {n.title}
-                </option>
-              ))}
-            </select>
+          {activeNotesExpanded && (
+            <>
+              {loadingNotes ? (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <Loader2 className="spin-icon" size={16} />
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Loading library...</span>
+                </div>
+              ) : notes.length === 0 ? (
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No completed extraction notes found.</span>
+              ) : (
+                <select
+                  value={selectedNote?.id || ''}
+                  onChange={(e) => {
+                    const note = notes.find(n => n.id === Number(e.target.value));
+                    if (note) setSelectedNote(dedupeNoteTopics(note));
+                  }}
+                  style={{
+                    width: '100%',
+                    backgroundColor: 'rgba(255,255,255,0.02)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '10px 14px',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.85rem',
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {notes.map(n => (
+                    <option key={n.id} value={n.id} style={{ backgroundColor: '#130f2e', color: 'white' }}>
+                      {n.title}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </>
           )}
         </div>
 
@@ -584,7 +803,8 @@ export const LearningHub: React.FC = () => {
 
       {/* 2. CENTER PANEL: Video Playback & Actions */}
       <div style={{
-        flex: 1,
+        flex: centerCollapsed ? '0 0 64px' : '1 1 auto',
+        minWidth: centerCollapsed ? '64px' : '0',
         backgroundColor: 'rgba(255,255,255,0.01)',
         border: '1px solid var(--border-color)',
         borderRadius: 'var(--radius-md)',
@@ -592,53 +812,78 @@ export const LearningHub: React.FC = () => {
         flexDirection: 'column',
         overflow: 'hidden'
       }}>
-        {selectedNote && (activeTopicId || activeSubtopicId) ? (
-          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-            {/* Active Header */}
-            <div style={{
-              padding: '16px 24px',
-              borderBottom: '1px solid var(--border-color)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              backgroundColor: 'rgba(255,255,255,0.01)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <div>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Studying Concept
-                  </span>
-                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>{activeTitle}</h3>
-                </div>
-                <button
-                  onClick={() => handleTriggerQuiz(activeTitle)}
-                  style={{
-                    padding: '5px 12px',
-                    fontSize: '0.72rem',
-                    borderRadius: '4px',
-                    backgroundColor: 'rgba(139, 92, 246, 0.15)',
-                    border: '1px solid rgba(139, 92, 246, 0.3)',
-                    color: 'var(--primary-light, #c084fc)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    fontWeight: 600,
-                    transition: 'all 0.2s',
-                    alignSelf: 'center'
-                  }}
-                >
-                  <HelpCircle size={12} />
-                  Test with Quiz
-                </button>
+        <div style={{
+          padding: '16px 24px',
+          borderBottom: '1px solid var(--border-color)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          backgroundColor: 'rgba(255,255,255,0.01)'
+        }}>
+          {!centerCollapsed ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <div>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Studying Concept
+                </span>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>{activeTitle}</h3>
               </div>
+              <button
+                onClick={() => handleTriggerQuiz(activeTitle)}
+                style={{
+                  padding: '5px 12px',
+                  fontSize: '0.72rem',
+                  borderRadius: '4px',
+                  backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                  border: '1px solid rgba(139, 92, 246, 0.3)',
+                  color: 'var(--primary-light, #c084fc)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontWeight: 600,
+                  transition: 'all 0.2s',
+                  alignSelf: 'center'
+                }}
+              >
+                <HelpCircle size={12} />
+                Test with Quiz
+              </button>
+            </div>
+          ) : (
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Video</span>
+          )}
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {!centerCollapsed && (
+              <>
                 <YoutubeIcon size={14} color="#ef4444" />
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>YouTube Embed grounded</span>
-              </div>
-            </div>
-
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => setCenterCollapsed(prev => !prev)}
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                padding: '6px 10px',
+                borderRadius: '999px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+              aria-label={centerCollapsed ? 'Expand video panel' : 'Collapse video panel'}
+            >
+              {centerCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+              <span style={{ fontSize: '0.78rem' }}>{centerCollapsed ? 'Expand' : 'Minimize'}</span>
+            </button>
+          </div>
+        </div>
+        {selectedNote && (activeTopicId || activeSubtopicId) ? (
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
             {/* Video Area */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', padding: '24px' }}>
               {loadingVideos ? (
@@ -661,21 +906,18 @@ export const LearningHub: React.FC = () => {
                     borderRadius: 'var(--radius-md)',
                     overflow: 'hidden',
                     border: '1px solid var(--border-color)',
-                    boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
+                    boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                    backgroundColor: '#000'
                   }}>
-                    <iframe
-                      src={`https://www.youtube.com/embed/${currentVideo.id}?autoplay=0&rel=0`}
+                    <div 
+                      ref={containerRef}
                       style={{
                         position: 'absolute',
                         top: 0,
                         left: 0,
                         width: '100%',
-                        height: '100%',
-                        border: 0
+                        height: '100%'
                       }}
-                      title={currentVideo.title}
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
                     />
                   </div>
 
@@ -785,9 +1027,10 @@ export const LearningHub: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '300px', color: 'var(--text-muted)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '300px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>
                   <Tv size={36} style={{ marginBottom: '12px', opacity: 0.5 }} />
-                  <span style={{ fontSize: '0.88rem' }}>No recommended lectures found for this concept.</span>
+                  <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-secondary)' }}>No public or embeddable educational videos found for this topic.</span>
+                  <span style={{ fontSize: '0.75rem', marginTop: '6px', opacity: 0.8 }}>Please try selecting another concept or subtopic from the syllabus.</span>
                 </div>
               )}
             </div>
@@ -814,7 +1057,8 @@ export const LearningHub: React.FC = () => {
 
       {/* 3. RIGHT PANEL: Recommended Playlist */}
       <div style={{
-        width: '300px',
+        width: rightCollapsed ? '64px' : '300px',
+        minWidth: rightCollapsed ? '64px' : '240px',
         backgroundColor: 'rgba(255,255,255,0.01)',
         border: '1px solid var(--border-color)',
         borderRadius: 'var(--radius-md)',
@@ -822,18 +1066,31 @@ export const LearningHub: React.FC = () => {
         flexDirection: 'column',
         overflow: 'hidden'
       }}>
-        <div style={{
-          padding: '16px 20px',
-          borderBottom: '1px solid var(--border-color)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          backgroundColor: 'rgba(255,255,255,0.01)'
-        }}>
-          <YoutubeIcon size={16} color="var(--primary)" />
-          <h3 style={{ fontSize: '0.9rem', fontWeight: 700 }}>Recommended Videos</h3>
+        <div 
+          onClick={() => setRightCollapsed(prev => !prev)}
+          style={{
+            padding: '16px 20px',
+            borderBottom: '1px solid var(--border-color)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: rightCollapsed ? 'center' : 'space-between',
+            backgroundColor: 'rgba(255,255,255,0.01)',
+            cursor: 'pointer',
+            userSelect: 'none'
+          }}
+        >
+          {!rightCollapsed ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <YoutubeIcon size={16} color="var(--primary)" />
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 700 }}>Recommended Videos</h3>
+              </div>
+              <ChevronDown size={14} />
+            </>
+          ) : (
+            <ChevronRight size={18} />
+          )}
         </div>
-
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
           {loadingVideos ? (
             <div style={{ display: 'flex', justifyContent: 'center', padding: '40px' }}>
@@ -968,11 +1225,5 @@ export const LearningHub: React.FC = () => {
     </div>
   );
 };
-
-// Helper function to safely parse integer in TS/JS option maps
-function intval(val: string): number {
-  const parsed = parseInt(val, 10);
-  return isNaN(parsed) ? 0 : parsed;
-}
 
 export default LearningHub;
