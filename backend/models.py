@@ -1,4 +1,5 @@
 import datetime
+import json
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float
 from sqlalchemy.orm import relationship
 from backend.database import Base
@@ -90,10 +91,27 @@ class ChatMessage(Base):
     content = Column(Text, nullable=False)
     source_topic = Column(String(150), nullable=True)
     confidence_score = Column(Float, nullable=True)
+    source_references_json = Column("source_references", Text, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     # Relationships
     session = relationship("ChatSession", back_populates="messages")
+
+    @property
+    def source_references(self):
+        if not self.source_references_json:
+            return None
+        try:
+            return json.loads(self.source_references_json)
+        except Exception:
+            return None
+
+    @source_references.setter
+    def source_references(self, value):
+        if value is None:
+            self.source_references_json = None
+        else:
+            self.source_references_json = json.dumps(value)
 
 
 class YoutubeVideoCache(Base):

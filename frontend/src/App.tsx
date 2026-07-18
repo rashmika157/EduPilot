@@ -15,7 +15,7 @@ import { TopicViewer } from './pages/TopicViewer';
 import { AITutor } from './pages/AITutor';
 import { LearningHub } from './pages/LearningHub';
 import { QuizHistory } from './pages/QuizHistory';
-import { PerformanceDashboard } from './pages/PerformanceDashboard';
+import { Profile } from './pages/Profile';
 
 // Main App component wrapping router
 const AppContent: React.FC = () => {
@@ -59,7 +59,7 @@ const AppContent: React.FC = () => {
   const getHeaderTitle = () => {
     switch (location.pathname) {
       case '/':
-        return 'Dashboard Summary';
+        return '';
       case '/upload':
         return 'Upload Study Materials';
       case '/library':
@@ -72,10 +72,10 @@ const AppContent: React.FC = () => {
         return 'AI Study Assistant';
       case '/quiz-history':
         return 'Quiz Assessment History';
-      case '/performance':
-        return 'Performance & Metrics';
+      case '/profile':
+        return 'My Profile';
       default:
-        return 'EduPilot Cockpit';
+        return 'EduPilot Dashboard';
     }
   };
 
@@ -121,8 +121,8 @@ const AppContent: React.FC = () => {
             <Route path="/topics" element={<TopicViewer />} />
             <Route path="/learning-hub" element={<LearningHub />} />
             <Route path="/tutor" element={<AITutor />} />
+            <Route path="/profile" element={<Profile />} />
             <Route path="/quiz-history" element={<QuizHistory />} />
-            <Route path="/performance" element={<PerformanceDashboard />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

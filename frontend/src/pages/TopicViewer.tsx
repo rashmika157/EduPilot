@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { apiRequest } from '../api';
 import { QuizPanel } from '../components/QuizPanel';
+import { CollapsiblePanel, useSessionPanelState } from '../components/CollapsiblePanel';
 
 interface Subtopic {
   id: number;
@@ -47,7 +48,7 @@ interface Note {
 }
 
 export const TopicViewer: React.FC = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const noteIdParam = searchParams.get('noteId');
 
   // State
@@ -59,6 +60,7 @@ export const TopicViewer: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedTopics, setExpandedTopics] = useState<Record<number, boolean>>({});
   const [actionLoading, setActionLoading] = useState(false);
+  const [leftCollapsed, setLeftCollapsed] = useSessionPanelState('edupilot_tv_left_collapsed', false);
 
   // Polling ref to avoid effect closure stale state
   const pollTimerRef = useRef<any>(null);
@@ -107,9 +109,9 @@ export const TopicViewer: React.FC = () => {
   }
 
   // Fetch all notes on load
-  const fetchNotes = async (selectId?: number) => {
+  const fetchNotes = async (selectId?: number, silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError('');
       
       const data = await apiRequest('/api/notes/with-topics', {
@@ -125,6 +127,8 @@ export const TopicViewer: React.FC = () => {
         targetNote = data.find((n: Note) => n.id === selectId);
       } else if (noteIdParam) {
         targetNote = data.find((n: Note) => n.id === parseInt(noteIdParam));
+      } else if (selectedNote) {
+        targetNote = data.find((n: Note) => n.id === selectedNote.id);
       }
       
       if (!targetNote && data.length > 0) {
@@ -133,9 +137,9 @@ export const TopicViewer: React.FC = () => {
       
       setSelectedNote(targetNote || null);
     } catch (err: any) {
-      setError(err.message || 'Failed to retrieve notes packages.');
+      setError(err.message || 'Failed to retrieve note archives.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -146,60 +150,15 @@ export const TopicViewer: React.FC = () => {
     };
   }, []);
 
-  // Sync selected note choice with query param and manage polling
-  useEffect(() => {
-    if (selectedNote) {
-      // Update parameter without refreshing page
-      if (noteIdParam !== selectedNote.id.toString()) {
-        setSearchParams({ noteId: selectedNote.id.toString() });
-      }
+  const hasActiveExtraction = notes.some((note) =>
+    note.topic_extraction_status === 'pending' ||
+    note.topic_extraction_status === 'processing'
+  );
 
-      // Check if we need to poll for extraction results
-      if (
-        selectedNote.topic_extraction_status === 'pending' || 
-        selectedNote.topic_extraction_status === 'processing'
-      ) {
-        startPolling(selectedNote.id);
-      } else {
-        stopPolling();
-      }
-    } else {
-      stopPolling();
-    }
-  }, [selectedNote]);
-
-  const startPolling = (noteId: number) => {
+  const startPolling = () => {
     stopPolling();
-    
     pollTimerRef.current = setInterval(async () => {
-      try {
-        const updatedNote = await apiRequest(`/api/notes/${noteId}/topics`, {
-          method: 'GET',
-          requiresAuth: true
-        });
-        
-        // Update both list and selection
-        setNotes(prev => prev.map(n => n.id === noteId ? updatedNote : n));
-        
-        setSelectedNote(curr => {
-          if (curr && curr.id === noteId) {
-            // If status changed or topics updated
-            return updatedNote;
-          }
-          return curr;
-        });
-
-        // If completed or failed, stop polling
-        if (
-          updatedNote.topic_extraction_status === 'completed' || 
-          updatedNote.topic_extraction_status === 'failed'
-        ) {
-          stopPolling();
-        }
-      } catch (err) {
-        console.error('Polling error:', err);
-        stopPolling();
-      }
+      await fetchNotes(selectedNote?.id, true);
     }, 2500);
   };
 
@@ -209,6 +168,18 @@ export const TopicViewer: React.FC = () => {
       pollTimerRef.current = null;
     }
   };
+
+  useEffect(() => {
+    if (hasActiveExtraction) {
+      startPolling();
+    } else {
+      stopPolling();
+    }
+
+    return () => {
+      stopPolling();
+    };
+  }, [hasActiveExtraction, selectedNote?.id]);
 
   // Trigger or retry topic extraction
   const handleExtract = async () => {
@@ -263,15 +234,91 @@ export const TopicViewer: React.FC = () => {
   );
 
   return (
-    <div className="topic-container" style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '30px', minHeight: 'calc(100vh - 160px)' }}>
+    <div className="topic-container" style={{ 
+      display: 'flex', 
+      gap: '30px', 
+      minHeight: 'calc(100vh - 160px)',
+      overflow: 'hidden'
+    }}>
       
-      {/* Left Column: Notes selector list */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        
-        {/* Search Sidebar */}
-        <div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Note Packages</h3>
-          
+      {/* Left Column: Study Materials Sidebar */}
+      <div style={{
+        width: leftCollapsed ? '60px' : '320px',
+        minWidth: leftCollapsed ? '60px' : '320px',
+        backgroundColor: 'rgba(255,255,255,0.01)',
+        border: '1px solid var(--border-color)',
+        borderRadius: 'var(--radius-md)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        transition: 'width 300ms cubic-bezier(0.4, 0, 0.2, 1), min-width 300ms cubic-bezier(0.4, 0, 0.2, 1)'
+      }}>
+        <div 
+          onClick={() => leftCollapsed && setLeftCollapsed(false)}
+          style={{
+            padding: '16px 20px',
+            borderBottom: leftCollapsed ? 'none' : '1px solid var(--border-color)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: leftCollapsed ? 'center' : 'space-between',
+            gap: '10px',
+            cursor: leftCollapsed ? 'pointer' : 'default',
+            userSelect: 'none'
+          }}
+        >
+          {leftCollapsed ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+              <FolderOpen size={18} color="var(--primary)" />
+              <ChevronRight size={18} />
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, overflow: 'hidden' }}>
+                <FolderOpen size={18} color="var(--primary)" />
+                <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                  Study Materials
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLeftCollapsed(true);
+                }}
+                style={{
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  padding: '8px',
+                  borderRadius: '999px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '36px',
+                  height: '36px',
+                  flexShrink: 0
+                }}
+              >
+                <ChevronDown size={18} />
+              </button>
+            </>
+          )}
+        </div>
+
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: 1,
+          opacity: leftCollapsed ? 0 : 1,
+          transition: 'opacity 200ms ease',
+          overflow: 'hidden',
+          pointerEvents: leftCollapsed ? 'none' : 'auto',
+          minWidth: '320px',
+          gap: '20px',
+          padding: '20px'
+        }}>
+          {/* Search box */}
           <div style={{ position: 'relative', width: '100%' }}>
             <Search size={16} color="var(--text-muted)" style={{
               position: 'absolute',
@@ -289,122 +336,98 @@ export const TopicViewer: React.FC = () => {
               style={{ paddingLeft: '38px', paddingRight: '12px', paddingTop: '8px', paddingBottom: '8px', fontSize: '0.85rem' }}
             />
           </div>
-        </div>
 
-        {/* Notebooks List */}
-        <div className="glass-panel" style={{ flex: 1, padding: '16px', overflowY: 'auto', maxHeight: '60vh', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)' }}>
-              <div style={{
-                width: '20px',
-                height: '20px',
-                border: '2px solid var(--border-color)',
-                borderTopColor: 'var(--secondary)',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite',
-                margin: '0 auto 8px auto'
-              }} />
-              <p style={{ fontSize: '0.8rem' }}>Loading archive...</p>
-            </div>
-          ) : filteredNotes.length === 0 ? (
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center', padding: '20px 0' }}>No notebooks found.</p>
-          ) : (
-            filteredNotes.map((note) => {
-              const isSelected = selectedNote?.id === note.id;
-              const hasFailed = note.topic_extraction_status === 'failed';
-              const isProcessing = note.topic_extraction_status === 'pending' || note.topic_extraction_status === 'processing';
-              
-              return (
-                <button
-                  key={note.id}
-                  onClick={() => setSelectedNote(note)}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    borderRadius: 'var(--radius-sm)',
-                    border: isSelected ? '1px solid var(--secondary)' : '1px solid transparent',
-                    background: isSelected 
-                      ? 'linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(139, 92, 246, 0.05) 100%)' 
-                      : 'rgba(255, 255, 255, 0.02)',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '6px'
-                  }}
-                  className={`notebook-btn ${isSelected ? 'active' : ''}`}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                    <span className="badge badge-subject" style={{ fontSize: '0.7rem', padding: '2px 8px' }}>
-                      {note.subject}
-                    </span>
+          {/* Notebooks List */}
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)' }}>
+                <div style={{
+                  width: '20px',
+                  height: '20px',
+                  border: '2px solid var(--border-color)',
+                  borderTopColor: 'var(--secondary)',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite',
+                  margin: '0 auto 8px auto'
+                }} />
+                <p style={{ fontSize: '0.8rem' }}>Loading archive...</p>
+              </div>
+            ) : filteredNotes.length === 0 ? (
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center', padding: '20px 0' }}>No notebooks found.</p>
+            ) : (
+              filteredNotes.map((note) => {
+                const isSelected = selectedNote?.id === note.id;
+                const hasFailed = note.topic_extraction_status === 'failed';
+                const isProcessing = note.topic_extraction_status === 'pending' || note.topic_extraction_status === 'processing';
+                
+                return (
+                  <button
+                    key={note.id}
+                    onClick={() => setSelectedNote(note)}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: isSelected ? '1px solid var(--secondary)' : '1px solid transparent',
+                      background: isSelected 
+                        ? 'linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(139, 92, 246, 0.05) 100%)' 
+                        : 'rgba(255, 255, 255, 0.02)',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px'
+                    }}
+                    className={`notebook-btn ${isSelected ? 'active' : ''}`}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                      <span className="badge badge-subject" style={{ fontSize: '0.7rem', padding: '2px 8px' }}>
+                        {note.subject}
+                      </span>
+                      
+                      {/* Status Dot */}
+                      {isProcessing && (
+                        <span className="pulse-dot" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--warning)' }} title="Extracting topics..." />
+                      )}
+                      {hasFailed && (
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--danger)' }} title="Extraction failed" />
+                      )}
+                      {note.topic_extraction_status === 'completed' && (
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--success)' }} title="Topics generated" />
+                      )}
+                    </div>
                     
-                    {/* Status Dot */}
-                    {isProcessing && (
-                      <span className="pulse-dot" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--warning)' }} title="Extracting topics..." />
-                    )}
-                    {hasFailed && (
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--danger)' }} title="Extraction failed" />
-                    )}
-                    {note.topic_extraction_status === 'completed' && (
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--success)' }} title="Topics generated" />
-                    )}
-                  </div>
-                  
-                  <p style={{
-                    fontWeight: 600,
-                    fontSize: '0.85rem',
-                    color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    width: '100%'
-                  }}>{note.title}</p>
-                </button>
-              );
-            })
-          )}
+                    <p style={{
+                      fontWeight: 600,
+                      fontSize: '0.85rem',
+                      color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      width: '100%'
+                    }}>{note.title}</p>
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
-
       </div>
 
       {/* Right Column: Topics tree renderer */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', flex: 1, minWidth: 0 }}>
         
         {selectedNote ? (
-          <div className="glass-card" style={{ padding: '30px', display: 'flex', flexDirection: 'column', gap: '24px', minHeight: '100%' }}>
-            
-            {/* Header / Info bar */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '20px' }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                  <FileText size={20} color="var(--secondary)" />
-                  <h2 style={{ fontSize: '1.4rem', fontWeight: 800 }}>{selectedNote.title}</h2>
-                  {selectedNote.extraction_confidence !== undefined && selectedNote.extraction_confidence !== null && (
-                    <span style={{ 
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      padding: '3px 8px',
-                      borderRadius: '9999px',
-                      backgroundColor: 'rgba(139, 92, 246, 0.1)',
-                      border: '1px solid rgba(139, 92, 246, 0.25)',
-                      color: '#a78bfa',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}>
-                      Confidence: {Math.round(selectedNote.extraction_confidence * 100)}%
-                    </span>
-                  )}
-                </div>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                  Subject: <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{selectedNote.subject}</span>
-                  {selectedNote.description && ` • ${selectedNote.description}`}
-                </p>
-              </div>
-
-              {selectedNote.topic_extraction_status === 'completed' && selectedNote.topics && selectedNote.topics.length > 0 && (
+          <CollapsiblePanel
+            storageKey="edupilot_tv_topics_collapsed"
+            className="glass-card"
+            headerStyle={{ padding: '24px 30px' }}
+            contentStyle={{ padding: '0 30px 30px 30px', display: 'flex', flexDirection: 'column', gap: '24px' }}
+            title={selectedNote.title}
+            icon={<FileText size={20} color="var(--secondary)" />}
+            actionButtons={
+              selectedNote.topic_extraction_status === 'completed' && selectedNote.topics && selectedNote.topics.length > 0 ? (
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button onClick={expandAll} className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>Expand All</button>
                   <button onClick={collapseAll} className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>Collapse All</button>
@@ -419,7 +442,18 @@ export const TopicViewer: React.FC = () => {
                     Re-extract
                   </button>
                 </div>
-              )}
+              ) : undefined
+            }
+          >
+            
+            {/* Header Info / Meta bar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '20px', paddingTop: '10px' }}>
+              <div>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
+                  Subject: <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{selectedNote.subject}</span>
+                  {selectedNote.description && ` • ${selectedNote.description}`}
+                </p>
+              </div>
             </div>
 
             {/* Tree Rendering Area */}
@@ -460,9 +494,9 @@ export const TopicViewer: React.FC = () => {
                     }} />
                   </div>
                   
-                  <h3 style={{ fontSize: '1.2rem', marginBottom: '8px' }}>Analyzing Flight Package...</h3>
+                  <h3 style={{ fontSize: '1.2rem', marginBottom: '8px' }}>Analyzing Study Material...</h3>
                   <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', maxWidth: '400px', marginBottom: '16px' }}>
-                    PyMuPDF is scanning PDF structure, extracting outlines, and identifying high-frequency topic coordinates.
+                    We are scanning your note structure, extracting outlines, and identifying key topics.
                   </p>
                   
                   {/* Status Indicator */}
@@ -505,7 +539,7 @@ export const TopicViewer: React.FC = () => {
                   <AlertTriangle size={48} color="var(--danger)" style={{ marginBottom: '16px' }} />
                   <h3 style={{ fontSize: '1.2rem', marginBottom: '8px', color: '#fca5a5' }}>Topic Extraction Crashed</h3>
                   <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', maxWidth: '450px', marginBottom: '24px' }}>
-                    An error occurred during PyMuPDF document text processing. This might be due to a corrupted PDF, scan layout, or database synchronization error.
+                    An error occurred during note processing. This might be due to a corrupted file, formatting, or database sync issue.
                   </p>
                   <button onClick={handleExtract} className="btn btn-secondary" disabled={actionLoading}>
                     <RefreshCw size={14} className={actionLoading ? 'spin-icon' : ''} />
@@ -523,7 +557,7 @@ export const TopicViewer: React.FC = () => {
                   justifyContent: 'center', 
                   padding: '50px 20px', 
                   textAlign: 'center',
-                  background: 'rgba(11, 8, 27, 0.2)',
+                  background: 'rgba(11, 8, 27, 0.25)',
                   border: '1px solid var(--border-color)',
                   borderRadius: 'var(--radius-md)'
                 }}>
@@ -733,14 +767,14 @@ export const TopicViewer: React.FC = () => {
 
             </div>
 
-          </div>
+          </CollapsiblePanel>
         ) : (
           /* Initial selection guidance empty state */
-          <div className="glass-card" style={{ padding: '60px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', minHeight: '100%', color: 'var(--text-secondary)' }}>
+          <div className="glass-card" style={{ padding: '60px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', minHeight: '100%', color: 'var(--text-secondary)', flex: 1 }}>
             <FolderOpen size={48} color="var(--text-muted)" style={{ marginBottom: '16px' }} className="floating" />
-            <h3 style={{ color: 'var(--text-primary)', marginBottom: '8px' }}>Select Note Package</h3>
+            <h3 style={{ color: 'var(--text-primary)', marginBottom: '8px' }}>Select Study Material</h3>
             <p style={{ maxWidth: '360px', fontSize: '0.9rem', marginBottom: '20px' }}>
-              Choose an uploaded PDF book from the sidebar coordinates to inspect automatically cataloged topics.
+              Choose an uploaded PDF document to inspect automatically cataloged topics.
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--secondary)', fontSize: '0.85rem', fontWeight: 600 }}>
               <span>Click a notebook to begin</span>

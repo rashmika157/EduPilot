@@ -51,6 +51,26 @@ def get_learning_progress(
         if r.subtopic_id and r.status == "completed":
             completed_subtopic_count += 1
 
+    # Determine the last active progress item for resume behavior
+    latest_progress = db.query(UserTopicProgress).filter(
+        UserTopicProgress.user_id == current_user.id,
+        UserTopicProgress.note_id == note_id
+    ).order_by(UserTopicProgress.updated_at.desc()).first()
+
+    last_active_topic_id = None
+    last_active_subtopic_id = None
+    last_active_title = None
+    if latest_progress:
+        last_active_topic_id = latest_progress.topic_id
+        last_active_subtopic_id = latest_progress.subtopic_id
+
+        if latest_progress.subtopic_id:
+            subtopic = db.query(Subtopic).filter(Subtopic.id == latest_progress.subtopic_id).first()
+            last_active_title = subtopic.title if subtopic else None
+        elif latest_progress.topic_id:
+            topic = db.query(Topic).filter(Topic.id == latest_progress.topic_id).first()
+            last_active_title = topic.title if topic else None
+
     # 5. Calculate progress percentage based on subtopics
     progress_percentage = 0
     if total_subtopics > 0:
@@ -65,7 +85,10 @@ def get_learning_progress(
     return {
         "progress_percentage": min(100, progress_percentage),
         "progress_map": progress_map,
-        "last_watched_map": last_watched_map
+        "last_watched_map": last_watched_map,
+        "last_active_topic_id": last_active_topic_id,
+        "last_active_subtopic_id": last_active_subtopic_id,
+        "last_active_title": last_active_title
     }
 
 @router.post("/progress")
@@ -132,11 +155,23 @@ def update_learning_progress(
 @router.get("/videos")
 def get_topic_videos(
     query: str = Query(..., min_length=1),
+    note_id: Optional[int] = Query(None),
+    topic_id: Optional[int] = Query(None),
+    subtopic_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     try:
-        videos = search_youtube_videos(query, db)
+        # Log the received selection for debugging
+        print(f"[YouTube API] Requested search. note_id={note_id} topic_id={topic_id} subtopic_id={subtopic_id} query='{query}'")
+
+        videos = search_youtube_videos(query, db, note_id=note_id, topic_id=topic_id, subtopic_id=subtopic_id)
+
+        # Log selected top video if available
+        if videos:
+            top = videos[0]
+            print(f"[YouTube API] Top video: id={top.get('id')} title='{top.get('title')}'")
+
         return videos
     except Exception as e:
         raise HTTPException(

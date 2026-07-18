@@ -1,0 +1,26 @@
+# Python
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+.eslintcache
+
+# Environment
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db

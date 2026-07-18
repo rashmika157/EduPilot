@@ -2,31 +2,40 @@ import fitz
 import re
 import json
 from typing import List, Dict, Any, Optional
-import google.generativeai as genai
 from backend.config import settings
+from backend.services.openrouter_service import call_openrouter, parse_json_content
 
 def clean_and_normalize_title(title: str) -> str:
     if not title:
         return ""
-    # Strip leading slide/page/chapter numbers, bullet points, and colons
-    cleaned = re.sub(
-        r'^(?:Slide|Page|Chapter|Module|Section|Unit|Ch|Mod|Sec|Pg|\d+(?:\.\d+)*)[\s\-_.:,]*', 
-        '', 
-        title.strip(), 
-        flags=re.IGNORECASE
-    ).strip()
+    
+    cleaned = title.strip()
+    prev = None
+    while cleaned != prev:
+        prev = cleaned
+        # Strip slide, page, chapter, module, section, unit, or pure numbers (with spaces and subnumbers) recursively
+        cleaned = re.sub(
+            r'^(?:Slide|Page|Chapter|Module|Section|Unit|Ch|Mod|Sec|Pg|\d+(?:\.\d+)*)(?:\s+\d+)?[\s\-_.:,]*', 
+            '', 
+            cleaned, 
+            flags=re.IGNORECASE
+        ).strip()
     return cleaned
 
 def is_structural_title(title: str) -> bool:
     norm = re.sub(r'[\s\-_.:,\d#()\[\]]+', '', title).lower().strip()
     if not norm:
         return True
+    
     structural_words = {
         "slide", "page", "chapter", "module", "section", "unit", "ch", "mod", "sec", "pg", 
         "slides", "pages", "chapters", "modules", "sections", "units", 
         "generalconcepts", "generaltopics", "generalsyllabusconcepts", 
         "introduction", "overview", "summary", "conclusion", "tableofcontents", "contents", "index",
-        "keyoverview", "corevocabulary", "concepttopics", "conceptblocks"
+        "keyoverview", "corevocabulary", "concepttopics", "conceptblocks",
+        "objectives", "objective", "lecture", "lectures", "notes", "class", "classes",
+        "discussion", "discussions", "outline", "outlines", "review", "reviews", "studyguide", "studyguides",
+        "homework", "assignment", "assignments", "project", "projects", "lab", "labs", "syllabus"
     }
     if norm in structural_words:
         return True
@@ -105,16 +114,16 @@ def post_process_topics(extracted_data: Dict[str, Any]) -> Dict[str, Any]:
 def extract_topics_from_pdf(file_path: str) -> Dict[str, Any]:
     """
     Extracts topics and subtopics from a PDF file.
-    If GEMINI_API_KEY is configured, it uses Gemini to generate a high-quality hierarchical syllabus.
+    If OPENROUTER_API_KEY is configured, it uses OpenRouter to generate a high-quality hierarchical syllabus.
     Otherwise, it falls back to local PyMuPDF heuristics.
     """
     raw_data = None
-    if settings.GEMINI_API_KEY:
-        print("[AI] GEMINI_API_KEY detected. Starting AI-powered topic extraction...")
+    if settings.OPENROUTER_API_KEY:
+        print("[AI] OPENROUTER_API_KEY detected. Starting AI-powered topic extraction...")
         try:
-            raw_data = extract_topics_with_gemini(file_path)
+            raw_data = extract_topics_with_openrouter(file_path)
         except Exception as e:
-            print(f"[AI] Gemini topic extraction failed: {e}. Falling back to heuristics...")
+            print(f"[AI] OpenRouter topic extraction failed: {e}. Falling back to heuristics...")
             
     if not raw_data:
         print("[WARNING] Falling back to local heuristics...")
@@ -123,11 +132,8 @@ def extract_topics_from_pdf(file_path: str) -> Dict[str, Any]:
     return post_process_topics(raw_data)
 
 
-def extract_topics_with_gemini(file_path: str) -> Dict[str, Any]:
-    # Configure Gemini
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    
-    # 1. Open PDF and extract text up to 30 pages
+def extract_topics_with_openrouter(file_path: str) -> Dict[str, Any]:
+    # 1. Open PDF and extract text
     try:
         doc = fitz.open(file_path)
     except Exception as e:
@@ -151,13 +157,14 @@ You are an expert academic curriculum analyst.
 Analyze the following textbook/lecture notes text and generate a detailed hierarchical syllabus/topic structure of the concepts actually taught in the document.
 
 Requirements:
-1. Ignore slide numbers (e.g., "Slide 1", "Slide 2"), page numbers, chapter labels, headers, footers, and presentation structures.
+1. Ignore slide numbers (e.g., "Slide 1", "Slide 2", "Page 1"), page numbers, chapter labels, headers, footers, and presentation structures. If a page or slide lacks a title, do NOT name it "Slide X" or "Page X"; instead, infer a meaningful academic topic title based on the primary concept discussed in the text of that slide/page.
 2. Focus on extracting the actual core academic concepts and learning topics being taught.
 3. Group related concepts under parent topics to generate a clean, syllabus-style hierarchy.
 4. Merge repeated concepts across slides/pages into single, consolidated topic/subtopic nodes.
 5. Create meaningful subtopics and children/sub-subtopics based on the content being taught (e.g., "Mass Storage Systems" -> "Disk Scheduling" -> ["FCFS", "SSTF", "SCAN", "C-SCAN"]).
 6. Keep topic and subtopic titles concise and professional.
 7. Generate an overall extraction confidence score between 0.0 and 1.0.
+8. The output MUST look like a syllabus of concepts, not a slide index or chronological list of pages.
 
 Output MUST be a JSON object matching the following structure:
 {{
@@ -185,13 +192,8 @@ Here is the full notes text:
 ---
 """
 
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    response = model.generate_content(
-        prompt,
-        generation_config={"response_mime_type": "application/json"}
-    )
-    
-    result = json.loads(response.text)
+    response_text = call_openrouter(prompt, json_mode=True)
+    result = parse_json_content(response_text)
     
     # Sanitize and validate structural consistency
     topics = []
@@ -228,19 +230,6 @@ Here is the full notes text:
         "confidence_score": confidence_score,
         "topics": topics
     }
-
-
-def is_structural_title(title: str) -> bool:
-    # Normalize string by removing digits, punctuation, and spaces
-    norm = re.sub(r'[\s\-_.:,\d#()\[\]]+', '', title).lower().strip()
-    if not norm:
-        return True
-    # Filter common structural names or slides, chapters, modules, etc.
-    if re.match(r'^(slide|page|chapter|module|section|unit|ch|mod|sec|pg|slides|pages|chapters|modules|sections|units)$', norm):
-        return True
-    if norm in ["introduction", "overview", "summary", "conclusion", "tableofcontents", "contents", "index"]:
-        return True
-    return False
 
 
 def extract_topics_with_heuristics(file_path: str) -> Dict[str, Any]:
@@ -360,20 +349,21 @@ def extract_topics_with_heuristics(file_path: str) -> Dict[str, Any]:
                 text = page.get_text("text")
                 lines = [l.strip() for l in text.split('\n') if l.strip()]
                 
-                page_topic = f"Concept Topic {page_idx + 1}"
-                for l in lines[:3]:
-                    if 5 < len(l) < 60 and not l.endswith('.') and not is_structural_title(l):
-                        page_topic = l
+                page_topic = "Core Study Concepts"
+                for l in lines[:5]:
+                    cleaned_cand = clean_and_normalize_title(l)
+                    if 4 < len(cleaned_cand) < 60 and not l.endswith('.') and not is_structural_title(cleaned_cand):
+                        page_topic = cleaned_cand
                         break
                 
-                page_topic = re.sub(r'^(?:(?:\d+\.)+\d*\s*|[-•*]\s*)', '', page_topic).strip()
-                if is_structural_title(page_topic):
-                    page_topic = f"Concept Block {page_idx + 1}"
+                page_topic = clean_and_normalize_title(page_topic)
+                if not page_topic or is_structural_title(page_topic):
+                    page_topic = "Core Study Concepts"
                 
                 subtopics = []
                 for l in lines[3:15]:
                     if 10 < len(l) < 80 and not l.endswith('.') and not any(c.isdigit() for c in l[:2]):
-                        clean_l = re.sub(r'^(?:[-•*]\s*)', '', l).strip()
+                        clean_l = clean_and_normalize_title(l)
                         if clean_l and clean_l not in subtopics and not is_structural_title(clean_l):
                             subtopics.append(clean_l[:150])
                             if len(subtopics) >= 4:

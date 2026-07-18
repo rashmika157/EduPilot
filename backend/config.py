@@ -7,7 +7,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 class Settings(BaseSettings):
     DB_USER: str = os.getenv("DB_USER", "root")
-    DB_PASSWORD: str = os.getenv("DB_PASSWORD", "password")
+    DB_PASSWORD: str = os.getenv("DB_PASSWORD", 152005)
     DB_HOST: str = os.getenv("DB_HOST", "localhost")
     DB_PORT: str = os.getenv("DB_PORT", "3306")
     DB_NAME: str = os.getenv("DB_NAME", "edupilot")
@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 120
     
-    GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY", None)
+    OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY", None)
     YOUTUBE_API_KEY: Optional[str] = os.getenv("YOUTUBE_API_KEY", None)
     
     # Upload setup

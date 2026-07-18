@@ -59,6 +59,12 @@ def initialize_database():
                     cursor.execute("ALTER TABLE `notes` ADD COLUMN `extraction_confidence` FLOAT DEFAULT NULL;")
                     print("[OK] Column 'extraction_confidence' added to 'notes' table.")
 
+                # Check source_references on chat_messages
+                cursor.execute("SHOW COLUMNS FROM `chat_messages` LIKE 'source_references';")
+                if not cursor.fetchone():
+                    cursor.execute("ALTER TABLE `chat_messages` ADD COLUMN `source_references` TEXT DEFAULT NULL;")
+                    print("[OK] Column 'source_references' added to 'chat_messages' table.")
+
                 # Check parent_id on subtopics
                 cursor.execute("SHOW COLUMNS FROM `subtopics` LIKE 'parent_id';")
                 if not cursor.fetchone():

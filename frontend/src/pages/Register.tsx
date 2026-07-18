@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Compass, User, Mail, Lock, ShieldAlert, BadgeCheck } from 'lucide-react';
+import { GraduationCap, User, Mail, Lock, ShieldAlert, BadgeCheck, Eye, EyeOff } from 'lucide-react';
 import { apiRequest } from '../api';
 
 export const Register: React.FC = () => {
@@ -9,6 +9,8 @@ export const Register: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -20,7 +22,7 @@ export const Register: React.FC = () => {
 
     // Field Validations
     if (!username || !email || !password || !confirmPassword) {
-      setError('Please fill in all requested coordinates.');
+      setError('Please fill in all fields.');
       return;
     }
 
@@ -35,7 +37,7 @@ export const Register: React.FC = () => {
     }
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match. Sync failed.');
+      setError('Passwords do not match. Verification failed.');
       return;
     }
 
@@ -48,7 +50,7 @@ export const Register: React.FC = () => {
         body: JSON.stringify({ username, email, password })
       });
 
-      setSuccess('Registration complete! Diverting to flight deck...');
+      setSuccess('Registration complete! Redirecting to login...');
       setTimeout(() => {
         navigate('/login');
       }, 2000);
@@ -64,10 +66,10 @@ export const Register: React.FC = () => {
       <div className="glass-card auth-card">
         <div className="auth-header">
           <div className="auth-logo">
-            <Compass size={40} color="var(--secondary)" className="floating" />
+            <GraduationCap size={40} color="var(--secondary)" className="floating" />
             <span>EduPilot</span>
           </div>
-          <p className="auth-subtitle">Enlist to upload notes and plan your studies.</p>
+          <p className="auth-subtitle">Register to upload notes and plan your studies.</p>
         </div>
 
         {error && (
@@ -114,7 +116,7 @@ export const Register: React.FC = () => {
             </label>
             <input
               type="text"
-              placeholder="StarPilot"
+              placeholder="Learner"
               className="form-input"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -130,7 +132,7 @@ export const Register: React.FC = () => {
             </label>
             <input
               type="email"
-              placeholder="cadet@academy.edu"
+              placeholder="student@university.edu"
               className="form-input"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -144,15 +146,37 @@ export const Register: React.FC = () => {
               <Lock size={16} />
               Password
             </label>
-            <input
-              type="password"
-              placeholder="••••••••"
-              className="form-input"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={loading}
-              required
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="••••••••"
+                className="form-input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                style={{
+                  position: 'absolute',
+                  right: '14px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: 'var(--text-secondary)'
+                }}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
 
           <div className="form-group" style={{ marginBottom: '28px' }}>
@@ -160,15 +184,37 @@ export const Register: React.FC = () => {
               <Lock size={16} />
               Confirm Password
             </label>
-            <input
-              type="password"
-              placeholder="••••••••"
-              className="form-input"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              disabled={loading}
-              required
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showConfirmPassword ? 'text' : 'password'}
+                placeholder="••••••••"
+                className="form-input"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                disabled={loading}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((prev) => !prev)}
+                style={{
+                  position: 'absolute',
+                  right: '14px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: 'var(--text-secondary)'
+                }}
+                aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+              >
+                {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
 
           <button
@@ -177,12 +223,12 @@ export const Register: React.FC = () => {
             style={{ width: '100%', padding: '14px', borderRadius: 'var(--radius-sm)' }}
             disabled={loading}
           >
-            {loading ? 'Assembling Spacecraft...' : 'Create Pilot Credentials'}
+            {loading ? 'Creating account...' : 'Create Student Account'}
           </button>
         </form>
 
         <div className="auth-footer">
-          Already part of the crew?{' '}
+          Already have an account?{' '}
           <Link to="/login" className="auth-link">
             Log In Here &rarr;
           </Link>

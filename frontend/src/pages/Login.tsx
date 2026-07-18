@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Compass, Mail, Lock, ShieldAlert, ArrowRight } from 'lucide-react';
+import { GraduationCap, Mail, Lock, ShieldAlert, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { apiRequest } from '../api';
 
 interface LoginProps {
@@ -11,6 +11,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -64,10 +65,10 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       <div className="glass-card auth-card">
         <div className="auth-header">
           <div className="auth-logo">
-            <Compass size={40} color="var(--secondary)" className="floating" />
+            <GraduationCap size={40} color="var(--secondary)" className="floating" />
             <span>EduPilot</span>
           </div>
-          <p className="auth-subtitle">Welcome back, Cadet! Power up your engines.</p>
+          <p className="auth-subtitle">Welcome back! Access your personalized learning dashboard.</p>
         </div>
 
         {error && (
@@ -96,7 +97,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             </label>
             <input
               type="email"
-              placeholder="cadet@academy.edu"
+              placeholder="student@university.edu"
               className="form-input"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -110,15 +111,37 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               <Lock size={16} />
               Password
             </label>
-            <input
-              type="password"
-              placeholder="••••••••"
-              className="form-input"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={loading}
-              required
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="••••••••"
+                className="form-input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                style={{
+                  position: 'absolute',
+                  right: '14px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: 'var(--text-secondary)'
+                }}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
 
           <button
@@ -127,9 +150,9 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             style={{ width: '100%', padding: '14px', borderRadius: 'var(--radius-sm)' }}
             disabled={loading}
           >
-            {loading ? 'Initializing Core...' : (
+            {loading ? 'Logging in...' : (
               <>
-                Ignition & Login
+                Sign In
                 <ArrowRight size={16} />
               </>
             )}
@@ -137,9 +160,9 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         </form>
 
         <div className="auth-footer">
-          New to the crew?{' '}
+          New to the platform?{' '}
           <Link to="/register" className="auth-link">
-            Enlist Here &rarr;
+            Register Here &rarr;
           </Link>
         </div>
       </div>

@@ -12,6 +12,7 @@ import {
   Layers
 } from 'lucide-react';
 import { apiRequest, API_BASE_URL } from '../api';
+import { CollapsiblePanel } from '../components/CollapsiblePanel';
 
 const SUBJECT_CATEGORIES = [
   'All',
@@ -174,7 +175,14 @@ export const NotesLibrary: React.FC = () => {
       </div>
 
       {/* Search & Subject Filters */}
-      <div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <CollapsiblePanel
+        storageKey="edupilot_nl_filters_collapsed"
+        className="glass-card"
+        headerStyle={{ padding: '16px 20px' }}
+        contentStyle={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}
+        title="Search & Subject Filters"
+        icon={<Filter size={18} color="var(--primary)" />}
+      >
         
         {/* Search Input */}
         <div style={{ position: 'relative', width: '100%' }}>
@@ -245,7 +253,7 @@ export const NotesLibrary: React.FC = () => {
           </div>
         </div>
 
-      </div>
+      </CollapsiblePanel>
 
       {/* Notes Display Section */}
       {loading ? (

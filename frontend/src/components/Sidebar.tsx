@@ -5,14 +5,13 @@ import {
   UploadCloud, 
   BookOpen, 
   LogOut, 
-  Compass, 
+  GraduationCap, 
   User,
   X,
   Layers,
   Sparkles,
   Tv,
-  ClipboardList,
-  TrendingUp
+  ClipboardList
 } from 'lucide-react';
 
 
@@ -26,7 +25,6 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, username, onLogout }) => {
   const navigate = useNavigate();
   const location = useLocation();
-
   const menuItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
     { name: 'Upload Notes', path: '/upload', icon: UploadCloud },
@@ -34,13 +32,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, username, onL
     { name: 'Topic Viewer', path: '/topics', icon: Layers },
     { name: 'Learning Hub', path: '/learning-hub', icon: Tv },
     { name: 'AI Tutor', path: '/tutor', icon: Sparkles },
-    { name: 'Quiz History', path: '/quiz-history', icon: ClipboardList },
-    { name: 'Performance', path: '/performance', icon: TrendingUp },
+    { name: 'Quiz History', path: '/quiz-history', icon: ClipboardList }
   ];
 
   const handleLogout = () => {
     onLogout();
     navigate('/login');
+    onClose();
+  };
+
+  const openProfile = () => {
+    navigate('/profile');
     onClose();
   };
 
@@ -90,7 +92,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, username, onL
           borderBottom: '1px solid var(--border-color)'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Compass size={28} color="var(--secondary)" className="floating" />
+            <GraduationCap size={28} color="var(--secondary)" className="floating" />
             <h1 style={{
               fontFamily: 'var(--font-display)',
               fontSize: '1.4rem',
@@ -160,7 +162,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, username, onL
           flexDirection: 'column',
           gap: '14px'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button
+            onClick={openProfile}
+            style={{
+              all: 'unset',
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              cursor: 'pointer'
+            }}
+            aria-label="Go to profile"
+          >
             <div style={{
               width: '40px',
               height: '40px',
@@ -176,7 +189,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, username, onL
             }}>
               {username ? username.charAt(0).toUpperCase() : <User size={18} />}
             </div>
-            <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ minWidth: 0, flex: 1, textAlign: 'left' }}>
               <p style={{
                 fontSize: '0.9rem',
                 fontWeight: 600,
@@ -184,10 +197,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, username, onL
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis'
-              }}>{username || 'Student Pilot'}</p>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Co-Pilot Class</span>
+              }}>{username || 'Student'}</p>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Academic Workspace</span>
             </div>
-          </div>
+          </button>
           <button
             onClick={handleLogout}
             style={{
@@ -210,9 +223,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, username, onL
             className="sidebar-logout"
           >
             <LogOut size={16} />
-            Eject Session
+            Log Out
           </button>
         </div>
+
       </aside>
 
       {/* Styles for sidebar responsive display */}

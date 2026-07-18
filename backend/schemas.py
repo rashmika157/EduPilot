@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 # User Schemas
@@ -85,6 +85,7 @@ class ChatMessageResponse(BaseModel):
     content: str
     source_topic: Optional[str] = None
     confidence_score: Optional[float] = None
+    source_references: Optional[List[Dict[str, Any]]] = None
     created_at: datetime
 
     class Config:

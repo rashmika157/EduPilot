@@ -44,10 +44,31 @@ def generate_quiz_for_topic(
         
     try:
         doc = fitz.open(file_path)
+        matching_pages = []
+        topic_lower = payload.topic_title.lower()
+        
+        # 1. Search for pages containing the topic title
+        for page_idx in range(len(doc)):
+            page_text = doc[page_idx].get_text("text")
+            if topic_lower in page_text.lower():
+                matching_pages.append(page_idx)
+                
+        # 2. Extract text from matching pages (with a small context window)
+        pages_to_extract = set()
+        for p in matching_pages:
+            # Extract current page, previous page, and next page
+            for offset in [-1, 0, 1]:
+                target_page = p + offset
+                if 0 <= target_page < len(doc):
+                    pages_to_extract.add(target_page)
+                    
+        # 3. If no matching pages found, default to first 30 pages
+        if not pages_to_extract:
+            pages_to_extract = set(range(min(30, len(doc))))
+            
         text_content = []
-        # Extract up to first 100 pages
-        for page_idx in range(min(100, len(doc))):
-            text_content.append(doc[page_idx].get_text("text"))
+        for page_idx in sorted(list(pages_to_extract)):
+            text_content.append(f"--- Page {page_idx + 1} ---\n" + doc[page_idx].get_text("text"))
         doc.close()
         pdf_text = "\n".join(text_content)
     except Exception as e:

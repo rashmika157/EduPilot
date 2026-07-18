@@ -58,7 +58,7 @@ export const UploadNotes: React.FC = () => {
     
     // Check extension
     if (!selectedFile.name.toLowerCase().endsWith('.pdf') && selectedFile.type !== 'application/pdf') {
-      setError('Only PDF documents are supported for flight log archives.');
+      setError('Only PDF documents are supported.');
       return;
     }
     
@@ -167,8 +167,7 @@ export const UploadNotes: React.FC = () => {
       
       {/* Upload Header */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <h1 style={{ fontSize: '2rem', fontFamily: 'var(--font-display)', fontWeight: 800 }}>Upload Note Packages</h1>
-        <p style={{ color: 'var(--text-secondary)' }}>Catalog PDF summaries, textbooks, and exam questions into your private vault.</p>
+        <h1 style={{ fontSize: '2rem', fontFamily: 'var(--font-display)', fontWeight: 800 }}>Upload Study Material</h1>
       </div>
 
       {success && (
@@ -184,7 +183,7 @@ export const UploadNotes: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             <CheckCircle size={32} color="var(--success)" style={{ flexShrink: 0 }} />
             <div>
-              <h4 style={{ fontSize: '1.1rem', marginBottom: '4px' }}>Flight Package Cataloged Successfully!</h4>
+              <h4 style={{ fontSize: '1.1rem', marginBottom: '4px' }}>Study Material Uploaded Successfully!</h4>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Your PDF notes have been encrypted and stored in your dashboard archive.</p>
             </div>
           </div>
@@ -408,7 +407,7 @@ export const UploadNotes: React.FC = () => {
           style={{ width: '100%', padding: '14px', marginTop: '10px' }}
           disabled={loading}
         >
-          {loading ? 'Transmitting PDF...' : 'Secure & Upload note set'}
+          {loading ? 'Uploading PDF...' : 'Upload Study Material'}
         </button>
 
       </form>

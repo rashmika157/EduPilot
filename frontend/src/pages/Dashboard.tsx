@@ -2,22 +2,21 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   FileText, 
-  HardDrive, 
   Layers, 
-  ArrowUpRight, 
   Plus, 
-  Lightbulb, 
   Clock,
-  Sparkles,
   BookOpen
 } from 'lucide-react';
 import { apiRequest } from '../api';
+
+import { CollapsiblePanel } from '../components/CollapsiblePanel';
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -28,21 +27,13 @@ export const Dashboard: React.FC = () => {
         });
         setStats(data);
       } catch (err: any) {
-        setError(err.message || 'Failed to retrieve flight data metrics.');
+        setError(err.message || 'Failed to retrieve academic metrics.');
       } finally {
         setLoading(false);
       }
     };
     fetchStats();
   }, []);
-
-  const formatBytes = (bytes: number) => {
-    if (!bytes || bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  };
 
   if (loading) {
     return (
@@ -84,7 +75,7 @@ export const Dashboard: React.FC = () => {
     );
   }
 
-  const username = stats?.user_profile?.username || 'Co-Pilot';
+  const username = stats?.user_profile?.username || 'Student';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
@@ -101,16 +92,13 @@ export const Dashboard: React.FC = () => {
         gap: '24px'
       }}>
         <div>
-          <h1 style={{ fontSize: '2.2rem', marginBottom: '8px', fontFamily: 'var(--font-display)', fontWeight: 800 }}>
-            Welcome to the Cockpit, <span style={{
+          <h1 style={{ fontSize: '2.2rem', margin: 0, fontFamily: 'var(--font-display)', fontWeight: 800 }}>
+            Welcome to EduPilot, <span style={{
               background: 'linear-gradient(135deg, #fff 0%, var(--secondary) 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent'
             }}>{username}</span>! 🚀
           </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '1rem', maxWidth: '600px' }}>
-            EduPilot helps you catalog your engineering, medical, or school study materials inline. Ready for another high-altitude study session?
-          </p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
           <button className="btn btn-primary" onClick={() => navigate('/upload')}>
@@ -127,7 +115,7 @@ export const Dashboard: React.FC = () => {
       {/* Grid Statistics Counters */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
         gap: '20px'
       }}>
         {/* Metric 1 */}
@@ -136,177 +124,180 @@ export const Dashboard: React.FC = () => {
             <FileText size={24} />
           </div>
           <div className="stat-info">
-            <h4>Uploaded Sets</h4>
+            <h4>Uploaded Notes</h4>
             <p>{stats?.total_notes || 0}</p>
           </div>
         </div>
 
         {/* Metric 2 */}
         <div className="glass-card stat-card">
-          <div className="stat-icon secondary">
-            <HardDrive size={24} />
+          <div className="stat-icon success">
+            <Layers size={24} />
           </div>
           <div className="stat-info">
-            <h4>Cloud Weight</h4>
-            <p>{formatBytes(stats?.total_size_bytes)}</p>
+            <h4>Subjects</h4>
+            <p>{stats?.subject_distribution?.length || 0}</p>
           </div>
         </div>
 
         {/* Metric 3 */}
         <div className="glass-card stat-card">
-          <div className="stat-icon success">
-            <Layers size={24} />
+          <div className="stat-icon secondary">
+            <Clock size={24} />
           </div>
           <div className="stat-info">
-            <h4>Active Subjects</h4>
-            <p>{stats?.subject_distribution?.length || 0}</p>
+            <h4>Today’s Learning Hours</h4>
+            <p>{stats?.todays_learning_hours ?? 0}h</p>
           </div>
         </div>
+
       </div>
 
-      {/* Main Panel Content Split */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '2fr 1fr',
-        gap: '30px',
-        alignItems: 'start'
-      }} className="dashboard-grid">
+      {/* Main Panel Content */}
+      <div style={{ width: '100%' }}>
         
-        {/* Left Side: Recent Notes */}
-        <div className="glass-card" style={{ padding: '24px' }}>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '20px'
-          }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.25rem' }}>
-              <Clock size={18} color="var(--primary)" />
-              Recent Notebooks
+        {/* Recent Study Materials */}
+        <CollapsiblePanel
+          storageKey="edupilot_db_recent_collapsed"
+          className="glass-card"
+          headerStyle={{ padding: '20px 24px' }}
+          contentStyle={{ padding: '24px' }}
+          title={
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.25rem', margin: 0 }}>
+              Recent Study Materials
             </h3>
-            {stats?.recent_notes?.length > 0 && (
-              <a onClick={() => navigate('/library')} style={{
-                fontSize: '0.85rem',
-                color: 'var(--secondary)',
-                fontWeight: 500,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}>
-                Full Vault
-                <ArrowUpRight size={14} />
-              </a>
-            )}
-          </div>
-
-          {(!stats?.recent_notes || stats.recent_notes.length === 0) ? (
+          }
+          icon={<Clock size={18} color="var(--primary)" />}
+        >
+          {(!stats?.recent_study_materials || stats.recent_study_materials.length === 0) ? (
             <div style={{
               textAlign: 'center',
               padding: '40px 20px',
               color: 'var(--text-secondary)'
             }}>
-              <p style={{ marginBottom: '16px' }}>No PDFs uploaded yet. Let's upload your first study set!</p>
+              <p style={{ marginBottom: '16px' }}>No recent study materials. Upload a PDF to start learning.</p>
               <button className="btn btn-ghost" onClick={() => navigate('/upload')}>
                 <Plus size={16} />
-                Create First Entry
+                Upload Notes
               </button>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {stats.recent_notes.map((note: any) => (
-                <div 
-                  key={note.id}
-                  onClick={() => navigate('/library')}
+            <div style={{ display: 'grid', gap: '14px' }}>
+              {stats.recent_study_materials.map((material: any) => (
+                <div
+                  key={material.id}
                   style={{
                     display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '16px',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    padding: '18px 22px',
                     backgroundColor: 'rgba(255,255,255,0.02)',
                     border: '1px solid var(--border-color)',
                     borderRadius: 'var(--radius-sm)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease'
+                    boxShadow: 'var(--shadow-sm)'
                   }}
-                  className="recent-note-row"
                 >
-                  <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <p style={{
-                      fontWeight: 600,
-                      color: 'var(--text-primary)',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis'
-                    }}>{note.title}</p>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      Added {new Date(note.created_at).toLocaleDateString()}
-                    </span>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '18px', flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 0, flex: '1 1 240px' }}>
+                      <p style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>{material.title}</p>
+                      <p style={{ margin: '8px 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{material.subject}</p>
+                    </div>
+                    <div style={{ flex: '0 0 auto', textAlign: 'right' }}>
+                      <p style={{ margin: 0, fontSize: '0.95rem', color: 'var(--secondary)', fontWeight: 700 }}>{material.progress_percentage}% Completed</p>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginLeft: '16px' }}>
-                    <span className="badge badge-subject">{note.subject}</span>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                      {formatBytes(note.file_size)}
-                    </span>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      className="btn btn-primary"
+                      style={{ padding: '10px 18px', minWidth: '170px' }}
+                      onClick={() => navigate(`/learning-hub?noteId=${material.id}`)}
+                    >
+                      Continue Learning →
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
           )}
-        </div>
-
-        {/* Right Side: Tips and Quick Stats */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Study Tips Card */}
-          <div className="glass-card" style={{
-            padding: '24px',
-            background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(236, 72, 153, 0.05) 100%)',
-          }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', marginBottom: '16px' }}>
-              <Lightbulb size={18} color="var(--warning)" />
-              Weekly Pilot Guidelines
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {stats?.study_tips?.map((tip: string, idx: number) => (
-                <div key={idx} style={{
-                  padding: '12px',
-                  backgroundColor: 'rgba(11, 8, 27, 0.4)',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: '0.85rem',
-                  lineHeight: '1.4',
-                  color: 'var(--text-secondary)',
-                  borderLeft: '2px solid var(--primary)'
-                }}>
-                  {tip}
-                </div>
-              )) || (
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No telemetry tips loaded.</p>
-              )}
-            </div>
-          </div>
-
-          {/* Quick Motivation Card */}
-          <div className="glass-card" style={{
-            padding: '20px',
-            textAlign: 'center',
-            background: 'radial-gradient(circle, rgba(6,182,212,0.1) 0%, transparent 80%)'
-          }}>
-            <Sparkles size={28} color="var(--secondary)" className="floating" style={{ margin: '0 auto 12px auto' }} />
-            <h4 style={{ fontSize: '0.95rem', marginBottom: '4px', fontFamily: 'var(--font-display)' }}>Study Tracker</h4>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-              Keep logging study notes regularly. Organizing materials makes revisions 3x faster!
-            </p>
-          </div>
-        </div>
+        </CollapsiblePanel>
 
       </div>
 
+      {showProfileModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.55)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100
+        }} onClick={() => setShowProfileModal(false)}>
+          <div style={{
+            width: 'min(520px, calc(100% - 40px))',
+            backgroundColor: 'rgba(15, 12, 35, 0.98)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '20px',
+            padding: '28px',
+            boxShadow: '0 30px 80px rgba(0,0,0,0.35)'
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)' }}>My Profile</h2>
+                <p style={{ margin: '6px 0 0', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Personal details and learning summary.</p>
+              </div>
+              <button
+                onClick={() => setShowProfileModal(false)}
+                style={{
+                  background: 'none',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '50%',
+                  width: '38px',
+                  height: '38px',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  fontSize: '1.2rem',
+                  lineHeight: 1
+                }}
+                aria-label="Close profile modal"
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
+              <div style={{ display: 'grid', gap: '14px' }}>
+                <div>
+                  <span style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.82rem', marginBottom: '6px' }}>Name</span>
+                  <p style={{ margin: 0, color: 'var(--text-primary)', fontWeight: 700 }}>{stats?.user_profile?.username || username}</p>
+                </div>
+                <div>
+                  <span style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.82rem', marginBottom: '6px' }}>Email</span>
+                  <p style={{ margin: 0, color: 'var(--text-primary)' }}>{stats?.user_profile?.email || 'Not available'}</p>
+                </div>
+                <div>
+                  <span style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.82rem', marginBottom: '6px' }}>Joined</span>
+                  <p style={{ margin: 0, color: 'var(--text-primary)' }}>{stats?.user_profile?.created_at ? new Date(stats.user_profile.created_at).toLocaleDateString() : '—'}</p>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gap: '14px' }}>
+                <div>
+                  <span style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.82rem', marginBottom: '6px' }}>Uploaded Notes</span>
+                  <p style={{ margin: 0, color: 'var(--text-primary)' }}>{stats?.total_notes || 0}</p>
+                </div>
+                <div>
+                  <span style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.82rem', marginBottom: '6px' }}>Subjects Covered</span>
+                  <p style={{ margin: 0, color: 'var(--text-primary)' }}>{stats?.subject_distribution?.length || 0}</p>
+                </div>
+                <div>
+                  <span style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.82rem', marginBottom: '6px' }}>Videos Watched</span>
+                  <p style={{ margin: 0, color: 'var(--text-primary)' }}>{stats?.videos_watched || 0}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <style>{`
-        @media (max-width: 992px) {
-          .dashboard-grid {
-            grid-template-columns: 1fr !important;
-          }
-        }
         .recent-note-row:hover {
           background-color: rgba(255, 255, 255, 0.05) !important;
           border-color: rgba(139, 92, 246, 0.3) !important;

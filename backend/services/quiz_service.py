@@ -1,8 +1,8 @@
 import json
 import re
 from typing import List, Dict, Any
-import google.generativeai as genai
 from backend.config import settings
+from backend.services.openrouter_service import call_openrouter, parse_json_content
 
 FALLBACK_QUIZZES = {
     "os": [
@@ -458,57 +458,58 @@ FALLBACK_QUIZZES = {
 def generate_mcq_quiz(pdf_text: str, topic_title: str) -> List[Dict[str, Any]]:
     """
     Generates a 10-question MCQ quiz for a topic.
-    Calls Gemini API if available, falls back to local structured quiz banks.
+    Calls OpenRouter API if available, falls back to local structured quiz banks.
     """
     clean_topic = topic_title.strip().lower()
     
-    # 1. Attempt Gemini generation if key exists
-    if settings.GEMINI_API_KEY:
+    # 1. Attempt OpenRouter generation if key exists
+    if settings.OPENROUTER_API_KEY:
         try:
-            print(f"[Quiz] Prompting Gemini for MCQ quiz on topic: '{topic_title}'...")
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            model = genai.GenerativeModel("gemini-2.0-flash")
+            print(f"[Quiz] Prompting OpenRouter for MCQ quiz on topic: '{topic_title}'...")
             
             prompt = f"""
-You are an expert academic evaluator. Generate exactly 10 Multiple-Choice Questions (MCQs) testing concepts from the topic "{topic_title}" based on the following notes text.
+You are an expert academic evaluator. Generate exactly 10 Multiple-Choice Questions (MCQs) testing concepts from the topic "{topic_title}" based ONLY on the provided notes text.
 
 Grounding Notes text:
 \"\"\"
-{pdf_text[:30000]}
+{pdf_text[:40000]}
 \"\"\"
 
+Requirements:
+1. Every question must be directly answerable using the facts, definitions, or explanations explicitly mentioned in the provided notes text for the topic "{topic_title}".
+2. Do not generate generic questions or refer to external facts not present in the notes.
+3. The options must be clear, distinct, and accurate according to the notes.
+4. Provide a brief explanation citing why the correct answer is correct based on the notes.
+
 Output format:
-Return ONLY a valid JSON array of objects. Do not include markdown code block formatting (like ```json), do not include extra text. Just return the raw JSON array.
-Each JSON object in the array must match this schema:
+Return ONLY a valid JSON object with a single key "questions" containing an array of 10 question objects. Do not include markdown code block formatting (like ```json), do not include extra text. Just return the raw JSON object.
+The JSON object must match this schema:
 {{
-  "question": "The question text?",
-  "options": [
-    "A) Option description",
-    "B) Option description",
-    "C) Option description",
-    "D) Option description"
-  ],
-  "correct_index": 0, // Integer (0 to 3) representing the index of the correct option in the options array
-  "explanation": "Brief explanation of why this option is correct based on the notes."
+  "questions": [
+    {{
+      "question": "The question text?",
+      "options": [
+        "A) Option description",
+        "B) Option description",
+        "C) Option description",
+        "D) Option description"
+      ],
+      "correct_index": 0, // Integer (0 to 3) representing the index of the correct option in the options array
+      "explanation": "Brief explanation of why this option is correct based on the notes."
+    }}
+  ]
 }}
 """
-            response = model.generate_content(prompt)
-            response_text = response.text.strip()
-            
-            # Clean response text in case markdown block formatting is present
-            if response_text.startswith("```"):
-                response_text = re.sub(r"^```[a-zA-Z]*\n", "", response_text)
-                response_text = re.sub(r"\n```$", "", response_text)
-                response_text = response_text.strip()
-                
-            questions = json.loads(response_text)
+            response_text = call_openrouter(prompt, json_mode=True)
+            data = parse_json_content(response_text)
+            questions = data.get("questions", [])
             if isinstance(questions, list) and len(questions) == 10:
-                print(f"[Quiz] Successfully generated 10 MCQs from Gemini on '{topic_title}'.")
+                print(f"[Quiz] Successfully generated 10 MCQs from OpenRouter on '{topic_title}'.")
                 return questions
             else:
-                print(f"[Quiz] Gemini output validation failed (length={len(questions) if isinstance(questions, list) else 'not a list'}). Falling back.")
+                print(f"[Quiz] OpenRouter output validation failed (length={len(questions) if isinstance(questions, list) else 'not a list'}). Falling back.")
         except Exception as e:
-            print(f"[Quiz] Gemini quiz generation failed: {e}. Falling back to program mocks.")
+            print(f"[Quiz] OpenRouter quiz generation failed: {e}. Falling back to program mocks.")
 
     # 2. Local fallback bank
     print(f"[Quiz] Selecting high-quality fallback quiz bank for '{topic_title}'...")
